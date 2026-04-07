@@ -11,6 +11,7 @@
   },
   "dependencies": {
     "hardware-controller-sdk": "github:aique2022/hardware-controller#uat",
+    "lottie-react": "^2.4.1",
     "lucide-react": "^0.525.0",
     "next": "^14.2.32",
     "react": "^18",

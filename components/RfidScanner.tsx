@@ -2,15 +2,6 @@
 
 import { useEffect, useRef, useState } from 'react';
 
-/**
- * RFID scanners act as HID keyboard devices — they type the tag value
- * and press Enter. This component captures that input invisibly.
- *
- * How it works:
- * - A hidden input is always focused
- * - Characters accumulate until Enter is pressed
- * - onScan is called with the accumulated value
- */
 interface Props {
   onScan: (rfid: string) => void;
   disabled?: boolean;

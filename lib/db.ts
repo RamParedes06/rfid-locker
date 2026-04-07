@@ -1,17 +1,20 @@
 /**
  * Simple JSON file-based store for RFID registrations.
- * Each record maps an RFID tag to a door number.
- * Replace with a real DB (Postgres, Mongo, etc.) as needed.
+ * Each record maps an RFID tag to 1–3 doors.
  */
 import fs from 'fs';
 import path from 'path';
 
-export interface RfidRecord {
-  id: string;       // uuid
-  rfid: string;     // the scanned RFID tag value
-  doorId: string;   // door _id from the locker API
+export interface DoorEntry {
+  doorId: string;
   doorNumber: number;
-  label?: string;   // optional friendly name
+}
+
+export interface RfidRecord {
+  id: string;
+  rfid: string;
+  doors: DoorEntry[];   // 1–3 doors
+  label?: string;
   createdAt: string;
 }
 
@@ -19,7 +22,14 @@ const DB_PATH = path.join(process.cwd(), 'data', 'rfid.json');
 
 function read(): RfidRecord[] {
   if (!fs.existsSync(DB_PATH)) return [];
-  return JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+  const raw = JSON.parse(fs.readFileSync(DB_PATH, 'utf-8'));
+  // Migrate legacy single-door records
+  return raw.map((r: any) => {
+    if (!r.doors) {
+      return { ...r, doors: [{ doorId: r.doorId, doorNumber: r.doorNumber }] };
+    }
+    return r;
+  });
 }
 
 function write(records: RfidRecord[]) {
@@ -42,6 +52,15 @@ export const db = {
     };
     write([...records, newRecord]);
     return newRecord;
+  },
+
+  update: (id: string, patch: { doors: DoorEntry[]; label?: string }): RfidRecord | null => {
+    const records = read();
+    const idx = records.findIndex((r) => r.id === id);
+    if (idx === -1) return null;
+    records[idx] = { ...records[idx], doors: patch.doors, label: patch.label };
+    write(records);
+    return records[idx];
   },
 
   delete: (id: string): boolean => {

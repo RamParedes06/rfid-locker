@@ -5,7 +5,7 @@ import DoorMatrix, { Door } from '@/components/DoorMatrix';
 import RfidScanner from '@/components/RfidScanner';
 import {
   Tag, ScanLine, Trash2, CheckCircle, AlertCircle, LayoutGrid,
-  ChevronRight, ArrowLeft, MonitorSmartphone, Hash, Clock, X, Pencil,
+  ChevronRight, MonitorSmartphone, Hash, Clock, X, Pencil, ArrowRight,
 } from 'lucide-react';
 
 interface DoorEntry {
@@ -21,24 +21,24 @@ interface RfidRecord {
   createdAt: string;
 }
 
-type Step = 'select-doors' | 'scan-rfid';
+type ModalStep = 'scan' | 'label';
 
 export default function DashboardPage() {
   const [doors, setDoors] = useState<Door[]>([]);
   const [registrations, setRegistrations] = useState<RfidRecord[]>([]);
   const [selectedDoors, setSelectedDoors] = useState<Door[]>([]);
-  const [step, setStep] = useState<Step>('select-doors');
+  const [modalOpen, setModalOpen] = useState(false);
+  const [modalStep, setModalStep] = useState<ModalStep>('scan');
+  const [scannedRfid, setScannedRfid] = useState('');
   const [label, setLabel] = useState('');
   const [status, setStatus] = useState<{ type: 'success' | 'error'; message: string } | null>(null);
   const [loading, setLoading] = useState(false);
   const [activeTab, setActiveTab] = useState<'register' | 'tags'>('register');
   const [editingRecord, setEditingRecord] = useState<RfidRecord | null>(null);
   const statusTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const labelInputRef = useRef<HTMLInputElement>(null);
 
-  useEffect(() => {
-    fetchDoors();
-    fetchRegistrations();
-  }, []);
+  useEffect(() => { fetchDoors(); fetchRegistrations(); }, []);
 
   async function fetchDoors() {
     const res = await fetch('/api/doors');
@@ -65,20 +65,42 @@ export default function DashboardPage() {
     setSelectedDoors((prev) => {
       const exists = prev.find((d) => d._id === door._id);
       if (exists) return prev.filter((d) => d._id !== door._id);
-      if (prev.length >= 3) return prev; // max 3
+      if (prev.length >= 3) return prev;
       return [...prev, door];
     });
   }
 
-  async function handleRfidScan(rfid: string) {
-    if (selectedDoors.length === 0 || loading) return;
+  function openModal() {
+    setModalStep('scan');
+    setScannedRfid('');
+    setLabel('');
+    setModalOpen(true);
+  }
+
+  function closeModal() {
+    setModalOpen(false);
+    setScannedRfid('');
+    setLabel('');
+    setModalStep('scan');
+  }
+
+  function handleRfidScan(rfid: string) {
+    if (!modalOpen || modalStep !== 'scan') return;
+    setScannedRfid(rfid);
+    setModalStep('label');
+    // auto-focus label input after state update
+    setTimeout(() => labelInputRef.current?.focus(), 50);
+  }
+
+  async function handleRegister() {
+    if (!scannedRfid || loading) return;
     setLoading(true);
 
     const res = await fetch('/api/rfid', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
       body: JSON.stringify({
-        rfid,
+        rfid: scannedRfid,
         doors: selectedDoors.map((d) => ({ doorId: d._id, doorNumber: d.number })),
         label: label.trim() || undefined,
       }),
@@ -93,8 +115,7 @@ export default function DashboardPage() {
       const doorNums = selectedDoors.map((d) => `#${d.number}`).join(', ');
       showStatus('success', `RFID registered to door${selectedDoors.length > 1 ? 's' : ''} ${doorNums}`);
       setSelectedDoors([]);
-      setLabel('');
-      setStep('select-doors');
+      closeModal();
       fetchRegistrations();
       setActiveTab('tags');
     }
@@ -105,20 +126,20 @@ export default function DashboardPage() {
     fetchRegistrations();
   }
 
-  async function handleEditSave(id: string, doors: DoorEntry[], label: string) {
+  async function handleEditSave(id: string, doors: DoorEntry[], label: string, rfid: string): Promise<string | null> {
     const res = await fetch(`/api/rfid/${id}`, {
       method: 'PATCH',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ doors, label: label.trim() || undefined }),
+      body: JSON.stringify({ doors, label: label.trim() || undefined, rfid }),
     });
     const data = await res.json();
     if (!res.ok) {
-      showStatus('error', data.error ?? 'Update failed');
-    } else {
-      showStatus('success', `Updated to door${doors.length > 1 ? 's' : ''} ${doors.map((d) => `#${d.doorNumber}`).join(', ')}`);
-      setEditingRecord(null);
-      fetchRegistrations();
+      return data.error ?? 'Update failed';
     }
+    showStatus('success', `Updated to door${doors.length > 1 ? 's' : ''} ${doors.map((d) => `#${d.doorNumber}`).join(', ')}`);
+    setEditingRecord(null);
+    fetchRegistrations();
+    return null;
   }
 
   const registeredDoorIds = new Set(
@@ -129,18 +150,19 @@ export default function DashboardPage() {
   const availableDoors = doors.filter((d) => d.status === 'available' && !registeredDoorIds.has(d._id));
 
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-900 flex flex-col">
-      <header className="border-b border-slate-200 bg-white sticky top-0 z-10 shadow-sm">
+    <div className="min-h-screen bg-gradient text-slate-800 flex flex-col">
+      {/* Header */}
+      <header className="border-b border-teal-100 sticky top-0 z-10 bg-white/80 backdrop-blur-md shadow-sm">
         <div className="max-w-6xl mx-auto px-6 h-14 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-7 h-7 rounded-lg bg-blue-600 flex items-center justify-center">
+            <div className="w-7 h-7 rounded-lg gradient-primary flex items-center justify-center shadow-md shadow-teal-500/30">
               <Tag className="w-4 h-4 text-white" />
             </div>
             <span className="font-semibold text-sm tracking-tight text-slate-800">RFID Locker Admin</span>
           </div>
           <a
             href="/scan"
-            className="flex items-center gap-1.5 text-xs bg-blue-600 hover:bg-blue-700 text-white px-3 py-1.5 rounded-lg transition-colors"
+            className="flex items-center gap-1.5 text-xs gradient-primary hover:opacity-90 text-white px-3 py-1.5 rounded-lg transition-opacity shadow-md shadow-teal-500/20"
           >
             <MonitorSmartphone className="w-3.5 h-3.5" />
             Kiosk View
@@ -149,145 +171,104 @@ export default function DashboardPage() {
       </header>
 
       <main className="max-w-6xl mx-auto px-6 py-8 w-full space-y-6">
+        {/* Stat cards */}
         <div className="grid grid-cols-3 gap-4">
-          <StatCard icon={<LayoutGrid className="w-4 h-4" />} label="Total Doors" value={doors.filter((d) => !d.isScreen).length} color="blue" />
-          <StatCard icon={<CheckCircle className="w-4 h-4" />} label="Available" value={availableDoors.length} color="emerald" />
-          <StatCard icon={<Tag className="w-4 h-4" />} label="Registered Tags" value={registrations.length} color="violet" />
+          <StatCard icon={<LayoutGrid className="w-4 h-4" />} label="Total Doors"     value={doors.filter((d) => !d.isScreen).length} color="teal" />
+          <StatCard icon={<CheckCircle className="w-4 h-4" />} label="Available"       value={availableDoors.length}                   color="green" />
+          <StatCard icon={<Tag className="w-4 h-4" />}         label="Registered Tags" value={registrations.length}                    color="cyan" />
         </div>
 
+        {/* Status banner */}
         {status && (
-          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium border ${status.type === 'success' ? 'bg-emerald-50 text-emerald-700 border-emerald-200' : 'bg-red-50 text-red-700 border-red-200'}`}>
-            {status.type === 'success' ? <CheckCircle className="w-4 h-4 shrink-0" /> : <AlertCircle className="w-4 h-4 shrink-0" />}
+          <div className={`flex items-center gap-2.5 px-4 py-3 rounded-xl text-sm font-medium border ${
+            status.type === 'success'
+              ? 'bg-teal-50 text-teal-700 border-teal-200'
+              : 'bg-red-50 text-red-700 border-red-200'
+          }`}>
+            {status.type === 'success'
+              ? <CheckCircle className="w-4 h-4 shrink-0" />
+              : <AlertCircle className="w-4 h-4 shrink-0" />}
             {status.message}
           </div>
         )}
 
-        <div className="flex gap-1 bg-slate-100 border border-slate-200 rounded-xl p-1 w-fit">
+        {/* Tabs */}
+        <div className="flex gap-1 bg-white/60 border border-teal-100 rounded-xl p-1 w-fit shadow-sm">
           {(['register', 'tags'] as const).map((tab) => (
             <button
               key={tab}
               onClick={() => setActiveTab(tab)}
-              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all capitalize ${activeTab === tab ? 'bg-white text-slate-900 shadow-sm border border-slate-200' : 'text-slate-500 hover:text-slate-700'}`}
+              className={`px-4 py-1.5 rounded-lg text-sm font-medium transition-all capitalize ${
+                activeTab === tab
+                  ? 'gradient-primary text-white shadow-sm'
+                  : 'text-slate-500 hover:text-slate-700'
+              }`}
             >
               {tab === 'register' ? 'Register Tag' : `Tags (${registrations.length})`}
             </button>
           ))}
         </div>
 
+        {/* Register tab */}
         {activeTab === 'register' && (
-          <div className="bg-white border border-slate-200 rounded-2xl p-6 space-y-5 shadow-sm">
-            {step === 'select-doors' && (
-              <>
-                <div>
-                  <h2 className="font-semibold text-base text-slate-800">Select doors (max 3)</h2>
-                  <p className="text-slate-500 text-sm mt-0.5">
-                    Pick 1–3 doors, then scan the RFID card to register.
-                  </p>
-                </div>
-
-                {/* Selected doors chips */}
-                {selectedDoors.length > 0 && (
-                  <div className="flex flex-wrap gap-2">
-                    {selectedDoors.map((d) => (
-                      <span key={d._id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200">
-                        <Hash className="w-3 h-3" />
-                        Door {d.number}
-                        <button onClick={() => toggleDoor(d)} className="hover:text-blue-900 ml-0.5">
-                          <X className="w-3 h-3" />
-                        </button>
-                      </span>
-                    ))}
-                    {selectedDoors.length < 3 && (
-                      <span className="text-xs text-slate-400 self-center">
-                        {3 - selectedDoors.length} more allowed
-                      </span>
-                    )}
-                  </div>
-                )}
-
-                <DoorMatrix
-                  doors={doors}
-                  selectedDoorIds={new Set(selectedDoors.map((d) => d._id))}
-                  onSelect={toggleDoor}
-                  registeredDoorIds={registeredDoorIds}
-                  maxReached={selectedDoors.length >= 3}
-                />
-
-                {selectedDoors.length > 0 && (
-                  <button
-                    onClick={() => setStep('scan-rfid')}
-                    className="flex items-center gap-2 px-4 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-sm font-medium rounded-xl transition-colors"
-                  >
-                    <ScanLine className="w-4 h-4" />
-                    Continue to scan RFID
-                    <ChevronRight className="w-4 h-4" />
-                  </button>
-                )}
-              </>
-            )}
-
-            {step === 'scan-rfid' && (
-              <div className="space-y-5">
+          <div className="bg-white border border-teal-100 rounded-2xl p-6 space-y-5 shadow-sm">
+            <div className="flex items-start justify-between gap-4">
+              <div>
+                <h2 className="font-semibold text-base text-slate-800">Select doors (max 3)</h2>
+                <p className="text-slate-500 text-sm mt-0.5">
+                  Pick 1–3 doors, then click Continue to scan the RFID card.
+                </p>
+              </div>
+              {selectedDoors.length > 0 && (
                 <button
-                  onClick={() => setStep('select-doors')}
-                  className="flex items-center gap-1.5 text-sm text-slate-400 hover:text-slate-600 transition-colors"
+                  onClick={openModal}
+                  className="shrink-0 flex items-center gap-2 px-4 py-2.5 gradient-primary hover:opacity-90 text-white text-sm font-medium rounded-xl transition-opacity shadow-md shadow-teal-500/20"
                 >
-                  <ArrowLeft className="w-3.5 h-3.5" />
-                  Back to door selection
+                  <ScanLine className="w-4 h-4" />
+                  Continue
+                  <ArrowRight className="w-4 h-4" />
                 </button>
+              )}
+            </div>
 
-                <div className="flex flex-wrap gap-2 p-4 bg-blue-50 border border-blue-200 rounded-xl">
-                  <p className="w-full text-sm font-semibold text-blue-900 mb-1">
-                    Registering to {selectedDoors.length} door{selectedDoors.length > 1 ? 's' : ''}:
-                  </p>
-                  {selectedDoors.map((d) => (
-                    <span key={d._id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200">
-                      <Hash className="w-3 h-3" />
-                      {d.number}
-                      <span className="font-normal text-blue-500 capitalize ml-0.5">{d.size}</span>
-                    </span>
-                  ))}
-                  <p className="w-full text-sm text-blue-600 mt-2 flex items-center gap-2">
-                    {loading ? (
-                      <>
-                        <span className="w-4 h-4 rounded-full border-2 border-blue-500 border-t-transparent animate-spin inline-block" />
-                        Registering...
-                      </>
-                    ) : (
-                      <>
-                        <ScanLine className="w-4 h-4 animate-pulse" />
-                        Tap the RFID card on the scanner now
-                      </>
-                    )}
-                  </p>
-                </div>
-
-                <div className="space-y-1.5">
-                  <label className="text-sm font-medium text-slate-700">
-                    Label <span className="text-slate-400 font-normal">(optional)</span>
-                  </label>
-                  <input
-                    type="text"
-                    value={label}
-                    onChange={(e) => setLabel(e.target.value)}
-                    placeholder="e.g. John's card"
-                    className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-                  />
-                </div>
-
-                <RfidScanner onScan={handleRfidScan} disabled={loading} />
+            {/* Selected door chips */}
+            {selectedDoors.length > 0 && (
+              <div className="flex flex-wrap gap-2">
+                {selectedDoors.map((d) => (
+                  <span key={d._id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold border border-teal-200">
+                    <Hash className="w-3 h-3" />
+                    Door {d.number}
+                    <button onClick={() => toggleDoor(d)} className="hover:text-teal-900 ml-0.5">
+                      <X className="w-3 h-3" />
+                    </button>
+                  </span>
+                ))}
+                {selectedDoors.length < 3 && (
+                  <span className="text-xs text-slate-400 self-center">
+                    {3 - selectedDoors.length} more allowed
+                  </span>
+                )}
               </div>
             )}
+
+            <DoorMatrix
+              doors={doors}
+              selectedDoorIds={new Set(selectedDoors.map((d) => d._id))}
+              onSelect={toggleDoor}
+              registeredDoorIds={registeredDoorIds}
+              maxReached={selectedDoors.length >= 3}
+            />
           </div>
         )}
 
+        {/* Tags tab */}
         {activeTab === 'tags' && (
-          <div className="bg-white border border-slate-200 rounded-2xl overflow-hidden shadow-sm">
+          <div className="bg-white border border-teal-100 rounded-2xl overflow-hidden shadow-sm">
             {registrations.length === 0 ? (
               <div className="flex flex-col items-center justify-center py-16 text-slate-400 gap-3">
                 <Tag className="w-8 h-8 opacity-30" />
                 <p className="text-sm">No RFID tags registered yet.</p>
-                <button onClick={() => setActiveTab('register')} className="flex items-center gap-1 text-xs text-blue-500 hover:text-blue-700 transition-colors">
+                <button onClick={() => setActiveTab('register')} className="flex items-center gap-1 text-xs text-teal-500 hover:text-teal-700 transition-colors">
                   Register your first tag <ChevronRight className="w-3 h-3" />
                 </button>
               </div>
@@ -304,12 +285,12 @@ export default function DashboardPage() {
                 </thead>
                 <tbody className="divide-y divide-slate-100">
                   {registrations.map((r) => (
-                    <tr key={r.id} className="hover:bg-slate-50 transition-colors group">
+                    <tr key={r.id} className="hover:bg-teal-50/50 transition-colors group">
                       <td className="px-5 py-3.5">
                         <div className="flex flex-wrap gap-1">
                           {r.doors.map((d) => (
-                            <span key={d.doorId} className="inline-flex items-center gap-1 font-semibold text-slate-800 bg-slate-100 px-2 py-0.5 rounded-md text-xs">
-                              <Hash className="w-3 h-3 text-slate-400" />
+                            <span key={d.doorId} className="inline-flex items-center gap-1 font-semibold text-teal-700 bg-teal-50 px-2 py-0.5 rounded-md text-xs border border-teal-200">
+                              <Hash className="w-3 h-3 text-teal-400" />
                               {d.doorNumber}
                             </span>
                           ))}
@@ -331,7 +312,7 @@ export default function DashboardPage() {
                         <div className="flex items-center justify-end gap-1">
                           <button
                             onClick={() => setEditingRecord(r)}
-                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-blue-500 p-1.5 rounded-lg hover:bg-blue-50 transition-all"
+                            className="opacity-0 group-hover:opacity-100 text-slate-400 hover:text-teal-600 p-1.5 rounded-lg hover:bg-teal-50 transition-all"
                             title="Edit"
                           >
                             <Pencil className="w-3.5 h-3.5" />
@@ -354,6 +335,101 @@ export default function DashboardPage() {
         )}
       </main>
 
+      {/* ── Register modal ── */}
+      {modalOpen && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+          <div className="bg-white border border-teal-100 rounded-2xl shadow-2xl w-full max-w-sm flex flex-col overflow-hidden">
+
+            {/* Modal header */}
+            <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
+              <div className="flex items-center gap-2">
+                {/* Step indicators */}
+                <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${modalStep === 'scan' ? 'gradient-primary text-white' : 'bg-teal-100 text-teal-600'}`}>1</span>
+                <div className={`w-8 h-0.5 rounded ${modalStep === 'label' ? 'bg-teal-400' : 'bg-slate-200'}`} />
+                <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${modalStep === 'label' ? 'gradient-primary text-white' : 'bg-slate-100 text-slate-400'}`}>2</span>
+                <span className="ml-2 text-sm font-semibold text-slate-700">
+                  {modalStep === 'scan' ? 'Scan RFID card' : 'Add a label'}
+                </span>
+              </div>
+              <button onClick={closeModal} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-all">
+                <X className="w-4 h-4" />
+              </button>
+            </div>
+
+            {/* Door summary pill row */}
+            <div className="px-6 pt-4 flex flex-wrap gap-1.5">
+              {selectedDoors.map((d) => (
+                <span key={d._id} className="inline-flex items-center gap-1 px-2.5 py-1 rounded-lg bg-teal-50 text-teal-700 text-xs font-semibold border border-teal-200">
+                  <Hash className="w-3 h-3" />
+                  Door {d.number}
+                </span>
+              ))}
+            </div>
+
+            {/* Step: scan */}
+            {modalStep === 'scan' && (
+              <div className="px-6 py-8 flex flex-col items-center gap-5">
+                <div className="w-20 h-20 rounded-2xl bg-teal-50 border-2 border-teal-200 flex items-center justify-center">
+                  <ScanLine className="w-10 h-10 text-teal-500 animate-pulse" />
+                </div>
+                <div className="text-center">
+                  <p className="font-semibold text-slate-800">Tap the RFID card on the scanner</p>
+                  <p className="text-slate-400 text-sm mt-1">Waiting for card…</p>
+                </div>
+                <RfidScanner onScan={handleRfidScan} disabled={false} />
+              </div>
+            )}
+
+            {/* Step: label */}
+            {modalStep === 'label' && (
+              <div className="px-6 py-6 space-y-5">
+                {/* Scanned card badge */}
+                <div className="flex items-center gap-3 p-3 bg-teal-50 border border-teal-200 rounded-xl">
+                  <CheckCircle className="w-5 h-5 text-teal-600 shrink-0" />
+                  <div>
+                    <p className="text-xs font-semibold text-teal-800">Card scanned</p>
+                    <code className="text-xs text-teal-600 font-mono">{scannedRfid}</code>
+                  </div>
+                  <button
+                    onClick={() => setModalStep('scan')}
+                    className="ml-auto text-xs text-slate-400 hover:text-teal-600 transition-colors"
+                  >
+                    Re-scan
+                  </button>
+                </div>
+
+                {/* Label input */}
+                <div className="space-y-1.5">
+                  <label className="text-sm font-medium text-slate-700">
+                    Name / Label <span className="text-slate-400 font-normal">(optional)</span>
+                  </label>
+                  <input
+                    ref={labelInputRef}
+                    type="text"
+                    value={label}
+                    onChange={(e) => setLabel(e.target.value)}
+                    onKeyDown={(e) => e.key === 'Enter' && handleRegister()}
+                    placeholder="e.g. John's card"
+                    className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400 transition"
+                  />
+                </div>
+
+                <button
+                  onClick={handleRegister}
+                  disabled={loading}
+                  className="w-full flex items-center justify-center gap-2 px-4 py-2.5 gradient-primary hover:opacity-90 disabled:opacity-50 text-white text-sm font-medium rounded-xl transition-opacity shadow-md shadow-teal-500/20"
+                >
+                  {loading
+                    ? <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
+                    : <CheckCircle className="w-4 h-4" />}
+                  {loading ? 'Registering…' : 'Save registration'}
+                </button>
+              </div>
+            )}
+          </div>
+        </div>
+      )}
+
       {editingRecord && (
         <EditModal
           record={editingRecord}
@@ -367,14 +443,16 @@ export default function DashboardPage() {
   );
 }
 
-function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label: string; value: number; color: 'blue' | 'emerald' | 'violet' }) {
+function StatCard({ icon, label, value, color }: {
+  icon: React.ReactNode; label: string; value: number; color: 'teal' | 'green' | 'cyan';
+}) {
   const colors = {
-    blue:    'bg-blue-50 text-blue-600 border-blue-100',
-    emerald: 'bg-emerald-50 text-emerald-600 border-emerald-100',
-    violet:  'bg-violet-50 text-violet-600 border-violet-100',
+    teal:  'bg-teal-50 text-teal-600 border-teal-200',
+    green: 'bg-green-50 text-green-600 border-green-200',
+    cyan:  'bg-cyan-50 text-cyan-600 border-cyan-200',
   };
   return (
-    <div className="bg-white border border-slate-200 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm">
+    <div className="bg-white border border-teal-100 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm">
       <div className={`w-9 h-9 rounded-xl border flex items-center justify-center shrink-0 ${colors[color]}`}>{icon}</div>
       <div>
         <p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p>
@@ -384,22 +462,18 @@ function StatCard({ icon, label, value, color }: { icon: React.ReactNode; label:
   );
 }
 
-function EditModal({
-  record,
-  allDoors,
-  registeredDoorIds,
-  onSave,
-  onClose,
-}: {
+function EditModal({ record, allDoors, registeredDoorIds, onSave, onClose }: {
   record: RfidRecord;
   allDoors: Door[];
   registeredDoorIds: Set<string>;
-  onSave: (id: string, doors: DoorEntry[], label: string) => Promise<void>;
+  onSave: (id: string, doors: DoorEntry[], label: string, rfid: string) => Promise<string | null>;
   onClose: () => void;
 }) {
   const [selectedDoors, setSelectedDoors] = useState<DoorEntry[]>(record.doors);
   const [label, setLabel] = useState(record.label ?? '');
+  const [editStep, setEditStep] = useState<'edit' | 'scan'>('edit');
   const [saving, setSaving] = useState(false);
+  const [scanError, setScanError] = useState('');
 
   function toggleDoor(door: Door) {
     setSelectedDoors((prev) => {
@@ -410,104 +484,135 @@ function EditModal({
     });
   }
 
-  async function handleSave() {
-    if (selectedDoors.length === 0) return;
+  async function handleScan(rfid: string) {
+    if (saving) return;
     setSaving(true);
-    await onSave(record.id, selectedDoors, label);
+    setScanError('');
+    const error = await onSave(record.id, selectedDoors, label, rfid);
     setSaving(false);
+    if (error) setScanError(error);
   }
 
   const selectedDoorIds = new Set(selectedDoors.map((d) => d.doorId));
   const maxReached = selectedDoors.length >= 3;
-
-  // Build Door objects for the matrix from selectedDoors
   const selectedDoorObjects = allDoors.filter((d) => selectedDoorIds.has(d._id));
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/40 backdrop-blur-sm">
-      <div className="bg-white rounded-2xl shadow-2xl border border-slate-200 w-full max-w-2xl max-h-[90vh] flex flex-col">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/30 backdrop-blur-sm">
+      <div className="bg-white border border-teal-100 rounded-2xl shadow-2xl w-full max-w-2xl max-h-[90vh] flex flex-col">
+
         {/* Header */}
         <div className="flex items-center justify-between px-6 py-4 border-b border-slate-100">
-          <div>
-            <h2 className="font-semibold text-slate-800">Edit Tag</h2>
-            <p className="text-xs text-slate-400 mt-0.5 font-mono">{record.rfid}</p>
+          <div className="flex items-center gap-2">
+            <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${editStep === 'edit' ? 'gradient-primary text-white' : 'bg-teal-100 text-teal-600'}`}>1</span>
+            <div className={`w-8 h-0.5 rounded ${editStep === 'scan' ? 'bg-teal-400' : 'bg-slate-200'}`} />
+            <span className={`w-6 h-6 rounded-full text-xs font-bold flex items-center justify-center ${editStep === 'scan' ? 'gradient-primary text-white' : 'bg-slate-100 text-slate-400'}`}>2</span>
+            <span className="ml-2 text-sm font-semibold text-slate-700">
+              {editStep === 'edit' ? 'Edit Tag' : 'Confirm with card'}
+            </span>
           </div>
           <button onClick={onClose} className="text-slate-400 hover:text-slate-600 p-1.5 rounded-lg hover:bg-slate-100 transition-all">
             <X className="w-4 h-4" />
           </button>
         </div>
 
-        {/* Body */}
-        <div className="overflow-y-auto px-6 py-5 space-y-5 flex-1">
-          {/* Label */}
-          <div className="space-y-1.5">
-            <label className="text-sm font-medium text-slate-700">
-              Label <span className="text-slate-400 font-normal">(optional)</span>
-            </label>
-            <input
-              type="text"
-              value={label}
-              onChange={(e) => setLabel(e.target.value)}
-              placeholder="e.g. John's card"
-              className="w-full bg-white border border-slate-300 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition"
-            />
-          </div>
+        {/* Step 1 — Edit */}
+        {editStep === 'edit' && (
+          <>
+            <div className="overflow-y-auto px-6 py-5 space-y-5 flex-1">
+              <div className="space-y-1.5">
+                <label className="text-sm font-medium text-slate-700">
+                  Label <span className="text-slate-400 font-normal">(optional)</span>
+                </label>
+                <input
+                  type="text"
+                  value={label}
+                  onChange={(e) => setLabel(e.target.value)}
+                  placeholder="e.g. John's card"
+                  className="w-full bg-white border border-slate-200 rounded-xl px-4 py-2.5 text-sm text-slate-800 placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-teal-400/50 focus:border-teal-400 transition"
+                />
+              </div>
 
-          {/* Selected chips */}
-          <div className="space-y-2">
-            <p className="text-sm font-medium text-slate-700">
-              Doors <span className="text-slate-400 font-normal">(max 3)</span>
-            </p>
-            <div className="flex flex-wrap gap-2 min-h-[32px]">
-              {selectedDoors.length === 0 && (
-                <span className="text-xs text-slate-400 self-center">No doors selected</span>
-              )}
-              {selectedDoorObjects.map((d) => (
-                <span key={d._id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-blue-100 text-blue-700 text-xs font-semibold border border-blue-200">
-                  <Hash className="w-3 h-3" />
-                  Door {d.number}
-                  <button onClick={() => toggleDoor(d)} className="hover:text-blue-900 ml-0.5">
-                    <X className="w-3 h-3" />
-                  </button>
-                </span>
-              ))}
-              {!maxReached && selectedDoors.length > 0 && (
-                <span className="text-xs text-slate-400 self-center">{3 - selectedDoors.length} more allowed</span>
-              )}
+              <div className="space-y-2">
+                <p className="text-sm font-medium text-slate-700">
+                  Doors <span className="text-slate-400 font-normal">(max 3)</span>
+                </p>
+                <div className="flex flex-wrap gap-2 min-h-[32px]">
+                  {selectedDoors.length === 0 && <span className="text-xs text-slate-400 self-center">No doors selected</span>}
+                  {selectedDoorObjects.map((d) => (
+                    <span key={d._id} className="inline-flex items-center gap-1.5 px-3 py-1 rounded-full bg-teal-50 text-teal-700 text-xs font-semibold border border-teal-200">
+                      <Hash className="w-3 h-3" />
+                      Door {d.number}
+                      <button onClick={() => toggleDoor(d)} className="hover:text-teal-900 ml-0.5"><X className="w-3 h-3" /></button>
+                    </span>
+                  ))}
+                  {!maxReached && selectedDoors.length > 0 && (
+                    <span className="text-xs text-slate-400 self-center">{3 - selectedDoors.length} more allowed</span>
+                  )}
+                </div>
+              </div>
+
+              <DoorMatrix
+                doors={allDoors}
+                selectedDoorIds={selectedDoorIds}
+                onSelect={toggleDoor}
+                registeredDoorIds={registeredDoorIds}
+                maxReached={maxReached}
+              />
             </div>
-          </div>
 
-          {/* Door matrix */}
-          <DoorMatrix
-            doors={allDoors}
-            selectedDoorIds={selectedDoorIds}
-            onSelect={toggleDoor}
-            registeredDoorIds={registeredDoorIds}
-            maxReached={maxReached}
-          />
-        </div>
+            <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
+              <button onClick={onClose} className="px-4 py-2 text-sm text-slate-500 hover:text-slate-700 rounded-xl hover:bg-slate-100 transition-all">
+                Cancel
+              </button>
+              <button
+                onClick={() => setEditStep('scan')}
+                disabled={selectedDoors.length === 0}
+                className="flex items-center gap-2 px-4 py-2 gradient-primary hover:opacity-90 disabled:opacity-40 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl transition-opacity shadow-md shadow-teal-500/20"
+              >
+                <ScanLine className="w-4 h-4" />
+                Continue — scan to confirm
+                <ArrowRight className="w-4 h-4" />
+              </button>
+            </div>
+          </>
+        )}
 
-        {/* Footer */}
-        <div className="flex items-center justify-end gap-3 px-6 py-4 border-t border-slate-100">
-          <button
-            onClick={onClose}
-            className="px-4 py-2 text-sm text-slate-600 hover:text-slate-800 rounded-xl hover:bg-slate-100 transition-all"
-          >
-            Cancel
-          </button>
-          <button
-            onClick={handleSave}
-            disabled={saving || selectedDoors.length === 0}
-            className="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-sm font-medium rounded-xl transition-colors"
-          >
-            {saving ? (
-              <span className="w-4 h-4 rounded-full border-2 border-white border-t-transparent animate-spin" />
-            ) : (
-              <CheckCircle className="w-4 h-4" />
+        {/* Step 2 — Scan to confirm */}
+        {editStep === 'scan' && (
+          <div className="px-6 py-8 flex flex-col items-center gap-5">
+            <div className={`w-20 h-20 rounded-2xl border-2 flex items-center justify-center transition-colors ${saving ? 'bg-teal-50 border-teal-300' : 'bg-teal-50 border-teal-200'}`}>
+              {saving
+                ? <span className="w-8 h-8 rounded-full border-4 border-teal-400 border-t-transparent animate-spin" />
+                : <ScanLine className="w-10 h-10 text-teal-500 animate-pulse" />}
+            </div>
+
+            <div className="text-center">
+              <p className="font-semibold text-slate-800">
+                {saving ? 'Saving changes…' : 'Tap the RFID card to confirm'}
+              </p>
+              <p className="text-slate-400 text-sm mt-1">
+                {saving ? 'Please wait' : 'Scan the card that belongs to this registration'}
+              </p>
+            </div>
+
+            {scanError && (
+              <div className="flex items-center gap-2 px-4 py-2.5 bg-red-50 border border-red-200 rounded-xl text-sm text-red-600 w-full">
+                <AlertCircle className="w-4 h-4 shrink-0" />
+                {scanError}
+              </div>
             )}
-            Save changes
-          </button>
-        </div>
+
+            <button
+              onClick={() => { setEditStep('edit'); setScanError(''); }}
+              className="text-sm text-slate-400 hover:text-slate-600 transition-colors"
+            >
+              ← Back to editing
+            </button>
+
+            <RfidScanner onScan={handleScan} disabled={saving} />
+          </div>
+        )}
       </div>
     </div>
   );

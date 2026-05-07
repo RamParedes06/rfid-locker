@@ -1,16 +1,24 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
-// PATCH /api/rfid/:id — update doors and/or label
+// PATCH /api/rfid/:id — update doors and/or label (requires rfid verification)
 export async function PATCH(req: NextRequest, { params }: { params: { id: string } }) {
   const body = await req.json();
-  const { doors, label } = body;
+  const { doors, label, rfid } = body;
 
   if (!Array.isArray(doors) || doors.length === 0) {
     return NextResponse.json({ error: 'doors[] is required' }, { status: 400 });
   }
   if (doors.length > 3) {
     return NextResponse.json({ error: 'Maximum 3 doors allowed per RFID card' }, { status: 400 });
+  }
+
+  // Verify the scanned RFID matches the record being edited
+  const record = db.getAll().find((r) => r.id === params.id);
+  if (!record) return NextResponse.json({ error: 'Not found' }, { status: 404 });
+
+  if (!rfid || rfid.trim() !== record.rfid) {
+    return NextResponse.json({ error: 'RFID card does not match this registration' }, { status: 403 });
   }
 
   const updated = db.update(params.id, { doors, label });

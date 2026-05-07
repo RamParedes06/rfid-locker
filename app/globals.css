@@ -1,3 +1,39 @@
 @tailwind base;
 @tailwind components;
 @tailwind utilities;
+
+@layer utilities {
+  .bg-gradient {
+    background: linear-gradient(
+      222.75deg,
+      rgba(80, 186, 132, 0.15) 1.96%,
+      rgba(51, 179, 169, 0.15) 50.38%,
+      rgba(21, 171, 208, 0.15) 98.04%
+    );
+  }
+
+  .gradient-primary {
+    background: linear-gradient(220.77deg, #50ba84 -0.59%, #33b3a9 50.11%, #15abd0 100%);
+  }
+
+  .gradient-primary-blur {
+    background-image: linear-gradient(
+      to right,
+      rgba(0, 194, 144, 0.1),
+      rgba(15, 184, 170, 0.1),
+      rgba(31, 173, 197, 0.1)
+    );
+    backdrop-filter: blur(30px);
+  }
+
+  .gradient-secondary {
+    background: linear-gradient(220.77deg, #00c290 0%, #0fb8aa -50%, #1fadc5 100%);
+  }
+
+  .gradient-text {
+    background: linear-gradient(220.77deg, #50ba84 -0.59%, #33b3a9 50.11%, #15abd0 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+  }
+}

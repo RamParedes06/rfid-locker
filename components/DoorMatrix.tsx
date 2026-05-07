@@ -23,15 +23,15 @@ interface Props {
 }
 
 const STATUS_COLOR: Record<string, string> = {
-  available: 'bg-green-100 border-green-400 hover:bg-green-200',
-  occupied:  'bg-red-100 border-red-400 cursor-not-allowed opacity-60',
-  disabled:  'bg-gray-100 border-gray-300 cursor-not-allowed opacity-40',
-  penciled:  'bg-yellow-100 border-yellow-400 cursor-not-allowed opacity-60',
+  available: 'bg-teal-50 border-teal-300 hover:bg-teal-100 text-teal-800',
+  occupied:  'bg-red-50 border-red-200 cursor-not-allowed opacity-60 text-red-700',
+  disabled:  'bg-slate-100 border-slate-200 cursor-not-allowed opacity-40 text-slate-600',
+  penciled:  'bg-yellow-50 border-yellow-300 cursor-not-allowed opacity-60 text-yellow-700',
 };
 
 export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onSelect, registeredDoorIds, maxReached }: Props) {
   if (!doors.length) {
-    return <p className="text-gray-400 text-sm">No doors found.</p>;
+    return <p className="text-slate-400 text-sm">No doors found.</p>;
   }
 
   return (
@@ -42,7 +42,7 @@ export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onS
         const isSelected =
           selectedDoorIds?.has(door._id) || selectedDoorId === door._id;
         const isRegistered = registeredDoorIds?.has(door._id);
-        const colorClass = STATUS_COLOR[door.status] ?? 'bg-gray-100 border-gray-300';
+        const colorClass = STATUS_COLOR[door.status] ?? 'bg-slate-100 border-slate-200 text-slate-400';
         const canSelect = door.status === 'available' && !isRegistered && (!maxReached || isSelected);
 
         return (
@@ -53,19 +53,19 @@ export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onS
             className={[
               'border-2 rounded-lg p-2 text-center text-xs font-medium transition-all',
               isSelected
-                ? 'ring-2 ring-blue-500 border-blue-500 bg-blue-50'
+                ? 'ring-2 ring-teal-500 border-teal-500 bg-teal-50 text-teal-900'
                 : isRegistered
-                  ? 'ring-2 ring-purple-400 border-purple-400 bg-purple-50'
+                  ? 'ring-2 ring-cyan-400 border-cyan-400 bg-cyan-50 text-cyan-800'
                   : colorClass,
               !canSelect && !isSelected ? 'opacity-50 cursor-not-allowed' : '',
             ].join(' ')}
           >
             <div className="font-bold text-sm">#{door.number}</div>
-            <div className="text-gray-500 capitalize">{door.size}</div>
-            {isSelected && <div className="text-blue-600 text-[10px] mt-0.5">✓ Selected</div>}
-            {!isSelected && isRegistered && <div className="text-purple-600 text-[10px] mt-0.5">RFID</div>}
+            <div className="text-slate-600 capitalize">{door.size}</div>
+            {isSelected && <div className="text-teal-700 text-[10px] mt-0.5">✓ Selected</div>}
+            {!isSelected && isRegistered && <div className="text-cyan-700 text-[10px] mt-0.5">RFID</div>}
             {!isSelected && !isRegistered && (
-              <div className="text-gray-400 text-[10px] mt-0.5 capitalize">{door.status}</div>
+              <div className="text-slate-500 text-[10px] mt-0.5 capitalize">{door.status}</div>
             )}
           </button>
         );

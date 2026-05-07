@@ -13,8 +13,14 @@ export default function RfidScanner({ onScan, disabled }: Props) {
 
   // Keep the hidden input focused so scanner input is captured
   useEffect(() => {
-    const refocus = () => {
-      if (!disabled) inputRef.current?.focus();
+    const refocus = (e?: MouseEvent) => {
+      if (disabled) return;
+      if (e) {
+        const tag = (e.target as HTMLElement).tagName;
+        if (['INPUT', 'TEXTAREA', 'SELECT', 'BUTTON', 'A'].includes(tag)) return;
+        if ((e.target as HTMLElement).isContentEditable) return;
+      }
+      inputRef.current?.focus();
     };
     document.addEventListener('click', refocus);
     refocus();
@@ -27,7 +33,6 @@ export default function RfidScanner({ onScan, disabled }: Props) {
       if (value) {
         onScan(value);
         setBuffer('');
-        // clear the input value too
         if (inputRef.current) inputRef.current.value = '';
       }
     }

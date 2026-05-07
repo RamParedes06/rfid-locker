@@ -3,12 +3,10 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import RfidScanner from '@/components/RfidScanner';
-import { DoorOpen, Wifi } from 'lucide-react';
+import { DoorOpen, ScanLine, Hand } from 'lucide-react';
 import loadingAnim from '@/public/lottie-loading.json';
 import successAnim from '@/public/lottie-success.json';
 import errorAnim from '@/public/lottie-error.json';
-import scanAnim from '@/public/lottie-scan.json';
-import doorAnim from '@/public/lottie-door.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
 type ScanState = 'idle' | 'loading' | 'pick-door' | 'opening' | 'success' | 'error';
@@ -27,12 +25,12 @@ interface ScanResult {
 }
 
 const BG: Record<ScanState, string> = {
-  idle:        'from-slate-900 via-blue-950 to-slate-900',
-  loading:     'from-slate-900 via-indigo-950 to-slate-900',
-  'pick-door': 'from-slate-900 via-blue-950 to-slate-900',
-  opening:     'from-slate-900 via-indigo-950 to-slate-900',
-  success:     'from-slate-900 via-emerald-950 to-slate-900',
-  error:       'from-slate-900 via-red-950 to-slate-900',
+  idle:        'from-slate-950 via-teal-950 to-slate-950',
+  loading:     'from-slate-950 via-cyan-950 to-slate-950',
+  'pick-door': 'from-slate-950 via-teal-950 to-slate-950',
+  opening:     'from-slate-950 via-cyan-950 to-slate-950',
+  success:     'from-slate-950 via-green-950 to-slate-950',
+  error:       'from-slate-950 via-red-950 to-slate-950',
 };
 
 export default function ScanPage() {
@@ -114,9 +112,9 @@ export default function ScanPage() {
       {!isFullscreen && (
         <div
           className={`relative w-full max-w-xs rounded-3xl bg-white/5 backdrop-blur-md border border-white/10 ring-4 shadow-2xl flex flex-col items-center gap-6 px-8 py-10 transition-all duration-500 ${
-            state === 'idle'    ? 'ring-blue-500/30 shadow-blue-500/20' :
-            state === 'loading' || state === 'opening' ? 'ring-indigo-400/30 shadow-indigo-500/20' :
-            state === 'success' ? 'ring-emerald-400/30 shadow-emerald-500/20' :
+            state === 'idle'    ? 'ring-teal-500/30 shadow-teal-500/20' :
+            state === 'loading' || state === 'opening' ? 'ring-cyan-400/30 shadow-cyan-500/20' :
+            state === 'success' ? 'ring-green-400/30 shadow-green-500/20' :
             'ring-red-400/30 shadow-red-500/20'
           }`}
         >
@@ -130,8 +128,8 @@ export default function ScanPage() {
                 </p>
               </div>
               <span className="flex h-3 w-3">
-                <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-blue-400 opacity-75" />
-                <span className="relative inline-flex rounded-full h-3 w-3 bg-blue-500" />
+                <span className="animate-ping absolute inline-flex h-3 w-3 rounded-full bg-teal-400 opacity-75" />
+                <span className="relative inline-flex rounded-full h-3 w-3 bg-teal-500" />
               </span>
             </>
           )}
@@ -142,7 +140,7 @@ export default function ScanPage() {
                 <Lottie animationData={loadingAnim as any} loop autoplay style={{ width: '100%', height: '100%' }} />
               </div>
               <div className="text-center space-y-2">
-                <h1 className="text-2xl font-bold text-indigo-300">
+                <h1 className="text-2xl font-bold text-cyan-300">
                   {state === 'loading' ? 'Verifying...' : 'Opening...'}
                 </h1>
                 <p className="text-slate-400 text-sm">Please wait a moment</p>
@@ -156,10 +154,10 @@ export default function ScanPage() {
                 <Lottie animationData={successAnim as any} loop={false} autoplay style={{ width: '100%', height: '100%' }} />
               </div>
               <div className="text-center space-y-2">
-                <h1 className="text-2xl font-bold text-emerald-300">Door Opened</h1>
+                <h1 className="text-2xl font-bold text-green-300">Door Opened</h1>
                 <p className="text-6xl font-black tracking-tighter mt-1">#{result?.openedDoor}</p>
                 {result?.label && <p className="text-slate-400 text-sm">{result.label}</p>}
-                <div className="flex items-center justify-center gap-2 text-emerald-400 pt-1">
+                <div className="flex items-center justify-center gap-2 text-green-400 pt-1">
                   <DoorOpen className="w-4 h-4" />
                   <span className="text-xs">Please retrieve your items</span>
                 </div>
@@ -183,22 +181,36 @@ export default function ScanPage() {
         </div>
       )}
 
-      {/* ── Multi-door picker — Lottie cards ── */}
+      {/* ── Multi-door picker ── */}
       {isFullscreen && result?.doors && (
-        <div className="flex flex-col items-center gap-8 w-full max-w-2xl">
-          <div className="text-center space-y-1">
-            <h1 className="text-3xl font-bold tracking-tight">Select your door</h1>
-            {result.label
-              ? <p className="text-slate-400 text-2xl">{result.label}</p>
-              : <p className="text-slate-500 text-sm">Tap a door card to open it</p>
-            }
+        <div className="flex flex-col items-center gap-10 w-full max-w-2xl">
+
+          {/* Welcome header */}
+          <div className="text-center space-y-3">
+            {result.label && (
+              <p className="text-teal-400 text-sm font-semibold uppercase tracking-widest">
+                Hi, {result.label}
+              </p>
+            )}
+            <h1 className="text-4xl font-medium tracking-tight leading-tight">
+              {result.label
+                ? <>Welcome to your locker,<br /></>
+                : 'Welcome to your locker'
+              }
+            </h1>
+            <p className="text-slate-400 text-base">
+              Select the door you want to open
+            </p>
+            {/* Decorative divider */}
+            <div className="flex items-center justify-center gap-3 pt-1">
+              <div className="h-px w-12 bg-gradient-to-r from-transparent to-teal-500/50" />
+              <div className="w-1.5 h-1.5 rounded-full gradient-primary" />
+              <div className="h-px w-12 bg-gradient-to-l from-transparent to-teal-500/50" />
+            </div>
           </div>
 
-          <div
-            className={`w-full grid gap-5 ${
-              result.doors.length === 2 ? 'grid-cols-2' : 'grid-cols-3'
-            }`}
-          >
+          {/* Door cards */}
+          <div className={`w-full grid gap-5 ${result.doors.length === 2 ? 'grid-cols-2' : 'grid-cols-3'}`}>
             {result.doors.map((door) => (
               <DoorCard
                 key={door.doorId}
@@ -211,7 +223,7 @@ export default function ScanPage() {
       )}
 
       <p className="absolute bottom-5 text-xs text-slate-600 tracking-widest uppercase">
-        Locker Kiosk
+        ISM Locker powered by QUBE 360 Smartlocker
       </p>
 
       <RfidScanner onScan={handleScan} disabled={state !== 'idle'} />
@@ -219,34 +231,29 @@ export default function ScanPage() {
   );
 }
 
-/* ── Door card with Lottie animations ── */
+/* ── Door card ── */
 function DoorCard({ doorNumber, onTap }: { doorNumber: number; onTap: () => void }) {
   return (
     <button
       onClick={onTap}
-      className="relative flex flex-col items-center gap-4 rounded-3xl bg-white/5 active:bg-white/15 border border-white/10 active:border-blue-400/60 backdrop-blur-md px-6 py-8 transition-all duration-150 active:scale-[0.97] shadow-lg shadow-blue-900/20"
+      className="relative flex flex-col items-center gap-5 rounded-3xl bg-white/5 active:bg-white/15 border border-white/10 active:border-teal-400/80 backdrop-blur-md px-6 py-10 transition-all duration-150 active:scale-[0.97] shadow-lg shadow-black/30"
     >
-      {/* Door lottie — always looping */}
-      <div className="w-28 h-28">
-        <Lottie
-          animationData={doorAnim as any}
-          loop
-          autoplay
-          style={{ width: '100%', height: '100%' }}
-        />
+      {/* Door icon */}
+      <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-teal-500/30">
+        <DoorOpen className="w-8 h-8 text-white" />
       </div>
 
       {/* Door number */}
-      <div className="flex flex-col items-center gap-1">
-        <span className="text-xs text-slate-400 uppercase tracking-widest">Door</span>
-        <span className="text-5xl font-black tracking-tighter text-white leading-none">
+      <div className="flex flex-col items-center gap-0.5">
+        <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Door</span>
+        <span className="text-6xl font-black tracking-tighter text-white leading-none">
           {doorNumber}
         </span>
       </div>
 
-      {/* Tap hint — always visible */}
-      <div className="flex items-center gap-1.5 text-xs text-blue-300">
-        <DoorOpen className="w-3.5 h-3.5" />
+      {/* Tap hint */}
+      <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs text-teal-400">
+        <Hand className="w-3 h-3" />
         <span>Tap to open</span>
       </div>
     </button>
@@ -260,7 +267,7 @@ function NfcPulse() {
       {[0, 1, 2].map((i) => (
         <span
           key={i}
-          className="absolute rounded-full border-2 border-blue-400/50 animate-ping"
+          className="absolute rounded-full border-2 border-teal-400/40 animate-ping"
           style={{
             width: `${48 + i * 28}px`,
             height: `${48 + i * 28}px`,
@@ -269,8 +276,8 @@ function NfcPulse() {
           }}
         />
       ))}
-      <div className="relative z-10 w-14 h-14 rounded-2xl bg-blue-600/20 border border-blue-500/40 flex items-center justify-center">
-        <Wifi className="w-7 h-7 text-blue-400" />
+      <div className="relative z-10 w-14 h-14 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-teal-500/30">
+        <ScanLine className="w-7 h-7 text-white" />
       </div>
     </div>
   );

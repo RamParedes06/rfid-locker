@@ -13,22 +13,22 @@ export async function PATCH(req: NextRequest, { params }: { params: { id: string
     return NextResponse.json({ error: 'Maximum 3 doors allowed per RFID card' }, { status: 400 });
   }
 
-  // Verify the scanned RFID matches the record being edited
-  const record = db.getAll().find((r) => r.id === params.id);
+  const records = await db.getAll();
+  const record = records.find((r) => r.id === params.id);
   if (!record) return NextResponse.json({ error: 'Not found' }, { status: 404 });
 
   if (!rfid || rfid.trim() !== record.rfid) {
     return NextResponse.json({ error: 'RFID card does not match this registration' }, { status: 403 });
   }
 
-  const updated = db.update(params.id, { doors, label });
+  const updated = await db.update(params.id, { doors, label });
   if (!updated) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json(updated);
 }
 
 // DELETE /api/rfid/:id — remove a registration
 export async function DELETE(_req: NextRequest, { params }: { params: { id: string } }) {
-  const deleted = db.delete(params.id);
+  const deleted = await db.delete(params.id);
   if (!deleted) return NextResponse.json({ error: 'Not found' }, { status: 404 });
   return NextResponse.json({ success: true });
 }

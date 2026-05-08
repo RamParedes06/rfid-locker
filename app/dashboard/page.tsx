@@ -45,6 +45,7 @@ type ModalStep = 'scan' | 'label';
 
 export default function DashboardPage() {
   const [doors, setDoors] = useState<Door[]>([]);
+  const [doorsLoading, setDoorsLoading] = useState(true);
   const [registrations, setRegistrations] = useState<RfidRecord[]>([]);
   const [transactions, setTransactions] = useState<RfidTransaction[]>([]);
   const [logs, setLogs] = useState<AccessLog[]>([]);
@@ -83,6 +84,7 @@ export default function DashboardPage() {
   }
 
   async function fetchDoors() {
+    setDoorsLoading(true);
     const res = await fetch('/api/doors');
     const data = await res.json();
     const units: Door[][] = Array.isArray(data) ? data : data?.units ?? [];
@@ -90,6 +92,7 @@ export default function DashboardPage() {
       (unit.columns ?? []).flatMap((col) => col.doors ?? [])
     );
     setDoors(allDoors);
+    setDoorsLoading(false);
   }
 
   async function fetchRegistrations() {
@@ -223,9 +226,19 @@ export default function DashboardPage() {
       <main className="max-w-6xl mx-auto px-6 py-8 w-full space-y-6">
         {/* Stat cards */}
         <div className="grid grid-cols-3 gap-4">
-          <StatCard icon={<LayoutGrid className="w-4 h-4" />} label="Total Doors"     value={doors.filter((d) => !d.isScreen).length} color="teal" />
-          <StatCard icon={<CheckCircle className="w-4 h-4" />} label="Available"       value={availableDoors.length}                   color="green" />
-          <StatCard icon={<Tag className="w-4 h-4" />}         label="Registered Tags" value={registrations.length}                    color="cyan" />
+          {doorsLoading ? (
+            <>
+              <StatCardSkeleton />
+              <StatCardSkeleton />
+              <StatCard icon={<Tag className="w-4 h-4" />} label="Registered Tags" value={registrations.length} color="cyan" />
+            </>
+          ) : (
+            <>
+              <StatCard icon={<LayoutGrid className="w-4 h-4" />} label="Total Doors"     value={doors.filter((d) => !d.isScreen).length} color="teal" />
+              <StatCard icon={<CheckCircle className="w-4 h-4" />} label="Available"       value={availableDoors.length}                   color="green" />
+              <StatCard icon={<Tag className="w-4 h-4" />}         label="Registered Tags" value={registrations.length}                    color="cyan" />
+            </>
+          )}
         </div>
 
         {/* Status banner */}
@@ -301,13 +314,17 @@ export default function DashboardPage() {
               </div>
             )}
 
-            <DoorMatrix
-              doors={doors}
-              selectedDoorIds={new Set(selectedDoors.map((d) => d._id))}
-              onSelect={toggleDoor}
-              registeredDoorIds={registeredDoorIds}
-              maxReached={selectedDoors.length >= 3}
-            />
+            {doorsLoading ? (
+              <DoorMatrixSkeleton />
+            ) : (
+              <DoorMatrix
+                doors={doors}
+                selectedDoorIds={new Set(selectedDoors.map((d) => d._id))}
+                onSelect={toggleDoor}
+                registeredDoorIds={registeredDoorIds}
+                maxReached={selectedDoors.length >= 3}
+              />
+            )}
           </div>
         )}
 
@@ -331,14 +348,18 @@ export default function DashboardPage() {
             </div>
 
             {/* Read-only door matrix — no onSelect, no selection state */}
-            <DoorMatrix
-              doors={doors}
-              selectedDoorIds={new Set()}
-              onSelect={() => {}}
-              registeredDoorIds={registeredDoorIds}
-              maxReached={true}
-              readOnly
-            />
+            {doorsLoading ? (
+              <DoorMatrixSkeleton />
+            ) : (
+              <DoorMatrix
+                doors={doors}
+                selectedDoorIds={new Set()}
+                onSelect={() => {}}
+                registeredDoorIds={registeredDoorIds}
+                maxReached={true}
+                readOnly
+              />
+            )}
           </div>
         )}
 
@@ -635,6 +656,35 @@ function StatCard({ icon, label, value, color }: {
         <p className="text-2xl font-bold tracking-tight text-slate-900">{value}</p>
         <p className="text-xs text-slate-400 mt-0.5">{label}</p>
       </div>
+    </div>
+  );
+}
+
+function StatCardSkeleton() {
+  return (
+    <div className="bg-white border border-teal-100 rounded-2xl px-5 py-4 flex items-center gap-4 shadow-sm animate-pulse">
+      <div className="w-9 h-9 rounded-xl bg-slate-100 shrink-0" />
+      <div className="space-y-2 flex-1">
+        <div className="h-6 w-10 bg-slate-100 rounded-md" />
+        <div className="h-3 w-20 bg-slate-100 rounded-md" />
+      </div>
+    </div>
+  );
+}
+
+function DoorMatrixSkeleton() {
+  return (
+    <div className="grid grid-cols-5 gap-2 animate-pulse">
+      {Array.from({ length: 20 }).map((_, i) => (
+        <div
+          key={i}
+          className="border-2 border-slate-100 rounded-lg p-2 flex flex-col items-center gap-1.5 bg-slate-50"
+        >
+          <div className="h-4 w-8 bg-slate-200 rounded" />
+          <div className="h-3 w-10 bg-slate-100 rounded" />
+          <div className="h-2.5 w-12 bg-slate-100 rounded" />
+        </div>
+      ))}
     </div>
   );
 }

@@ -11,7 +11,7 @@ const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
 const VERSION = process.env.NEXT_PUBLIC_VERSION_CONTROL ?? 'Multi';
 
-type ScanState = 'idle' | 'loading' | 'pick-door' | 'opening' | 'success' | 'error' | 'no-door';
+type ScanState = 'idle' | 'loading' | 'pick-door' | 'opening' | 'success' | 'error' | 'no-door' | 'conflict';
 
 interface DoorEntry {
   doorId: string;
@@ -36,6 +36,7 @@ const BG: Record<ScanState, string> = {
   success:     'from-slate-950 via-green-950 to-slate-950',
   error:       'from-slate-950 via-red-950 to-slate-950',
   'no-door':   'from-slate-950 via-slate-900 to-slate-950',
+  conflict:    'from-slate-950 via-amber-950 to-slate-950',
 };
 
 export default function ScanPage() {
@@ -66,6 +67,13 @@ export default function ScanPage() {
       // 503 = no doors available — friendly state, not an access error
       if (res.status === 503) {
         setState('no-door');
+        resetAfter(6000);
+        return;
+      }
+      // 409 = active transaction on a different locker
+      if (res.status === 409) {
+        setState('conflict');
+        setResult({ message: data.error, detail: `Door #${data.doorNumber}` });
         resetAfter(6000);
         return;
       }
@@ -136,6 +144,7 @@ export default function ScanPage() {
             state === 'loading' || state === 'opening' ? 'ring-cyan-400/30 shadow-cyan-500/20' :
             state === 'success' ? 'ring-green-400/30 shadow-green-500/20' :
             state === 'no-door' ? 'ring-slate-400/30 shadow-slate-500/20' :
+            state === 'conflict' ? 'ring-amber-400/30 shadow-amber-500/20' :
             'ring-red-400/30 shadow-red-500/20'
           }`}
         >
@@ -220,6 +229,23 @@ export default function ScanPage() {
                 <p className="text-slate-500 text-sm">
                   Please come back later.
                 </p>
+              </div>
+            </>
+          )}
+
+          {state === 'conflict' && (
+            <>
+              <div className="w-20 h-20 rounded-2xl bg-amber-900/40 border border-amber-600/50 flex items-center justify-center">
+                <DoorOpen className="w-10 h-10 text-amber-400" />
+              </div>
+              <div className="text-center space-y-3">
+                <h1 className="text-2xl font-bold text-amber-300">Active Transaction</h1>
+                <p className="text-slate-300 text-sm leading-relaxed px-2">
+                  {result?.message}
+                </p>
+                {result?.detail && (
+                  <p className="text-amber-400/70 text-xs">{result.detail}</p>
+                )}
               </div>
             </>
           )}

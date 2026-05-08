@@ -5,8 +5,7 @@ import { httpRequest } from '@/lib/httpRequest';
 
 const VERSION = process.env.VERSION_CONTROL ?? 'Multi';
 
-// POST /api/rfid/scan — look up RFID and return its assigned doors (Multi)
-//                       or auto-open the next available door (Single)
+// POST /api/rfid/scan
 export async function POST(req: NextRequest) {
   const { rfid } = await req.json();
 
@@ -14,7 +13,12 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'rfid is required' }, { status: 400 });
   }
 
-  const record = db.findByRfid(rfid);
+  const lockerId = process.env.NEXT_PUBLIC_LOCKER_ID;
+  if (!lockerId) {
+    return NextResponse.json({ error: 'Locker not configured (NEXT_PUBLIC_LOCKER_ID missing)' }, { status: 500 });
+  }
+
+  const record = await db.findByRfid(rfid);
   if (!record) {
     return NextResponse.json({ error: 'RFID not registered' }, { status: 404 });
   }
@@ -22,71 +26,75 @@ export async function POST(req: NextRequest) {
   // ── Multi mode ────────────────────────────────────────────────────────────
   if (VERSION !== 'Single') {
     return NextResponse.json({
-      id: record.id,
+      id:    record.id,
       label: record.label,
       doors: record.doors,
     });
   }
 
   // ── Single mode ───────────────────────────────────────────────────────────
-  // 1st tap: no transaction → find next available door → open → save transaction
-  // 2nd tap: has transaction → open the same door again → delete transaction
-  // 3rd tap: back to 1st tap behaviour (cycle repeats)
+  // Cross-locker check: does this RFID have an active transaction anywhere?
+  const anyTx = await txDb.findByRfid(rfid);
 
-  const existingTx = txDb.findByRfid(rfid);
-
-  if (existingTx) {
-    // ── 2nd tap: re-open the tied door and clear the transaction ─────────
-    try {
-      const hw = getHardwareController();
-      const result = await hw.locker.openDoor([existingTx.doorId]);
-      if (!result.completed) {
-        return NextResponse.json(
-          { error: 'Failed to open door', detail: result.error },
-          { status: 500 }
-        );
+  if (anyTx) {
+    // Transaction exists on THIS locker → checkout flow
+    if (anyTx.lockerId === lockerId) {
+      try {
+        const hw = getHardwareController();
+        const result = await hw.locker.openDoor([anyTx.doorId]);
+        if (!result.completed) {
+          return NextResponse.json(
+            { error: 'Failed to open door', detail: result.error },
+            { status: 500 }
+          );
+        }
+      } catch (err: any) {
+        console.error('Hardware open door failed:', err);
+        return NextResponse.json({ error: 'Failed to open door', detail: err.message }, { status: 500 });
       }
-    } catch (err: any) {
-      console.error('Hardware open door failed:', err);
-      return NextResponse.json({ error: 'Failed to open door', detail: err.message }, { status: 500 });
+
+      await txDb.deleteByRfidAndLocker(rfid, lockerId);
+      await logDb.append({
+        rfid,
+        label:      record.label,
+        lockerId,
+        doorNumber: anyTx.doorNumber,
+        action:     'checkout',
+      });
+
+      return NextResponse.json({
+        id:         record.id,
+        label:      record.label,
+        doorNumber: anyTx.doorNumber,
+        action:     'checkout',
+      });
     }
 
-    // Remove the transaction — RFID is free again
-    txDb.deleteByRfid(rfid);
-
-    // Log the checkout
-    logDb.append({ rfid, label: record.label, doorNumber: existingTx.doorNumber, action: 'checkout' });
-
-    return NextResponse.json({
-      id: record.id,
-      label: record.label,
-      doorNumber: existingTx.doorNumber,
-      action: 'checkout',
-    });
+    // Transaction exists on a DIFFERENT locker → block with friendly message
+    return NextResponse.json(
+      {
+        error:    `You have an existing transaction in Locker #${anyTx.lockerId}. Please check out there first.`,
+        lockedAt: anyTx.lockerId,
+        doorNumber: anyTx.doorNumber,
+      },
+      { status: 409 }
+    );
   }
 
-  // ── 1st tap: assign and open the next available door ─────────────────────
-  const lockerId = process.env.NEXT_PUBLIC_LOCKER_ID;
-  if (!lockerId) {
-    return NextResponse.json({ error: 'Locker not configured' }, { status: 500 });
-  }
-
+  // ── No existing transaction → check-in flow ───────────────────────────────
   const matrixData = await httpRequest(`lockers/${lockerId}/door-matrix`);
   if (matrixData?.error) {
     return NextResponse.json({ error: 'Failed to fetch door matrix' }, { status: 502 });
   }
 
-  // Flatten the door matrix (units → columns → doors) — same shape as /api/doors
   type RawDoor = { _id: string; number: number; status: string; isScreen?: boolean };
   const units: any[] = Array.isArray(matrixData) ? matrixData : matrixData?.units ?? [];
   const allDoors: RawDoor[] = units.flatMap((unit: any) =>
     (unit.columns ?? []).flatMap((col: any) => col.doors ?? [])
   );
 
-  // Doors already used by transactions
-  const usedDoorNumbers = txDb.usedDoorNumbers();
+  const usedDoorNumbers = await txDb.usedDoorNumbers(lockerId);
 
-  // Filter: available, not a screen, not already used by another transaction
   const availableDoors = allDoors
     .filter((d) => !d.isScreen && d.status === 'available' && !usedDoorNumbers.has(d.number))
     .sort((a, b) => a.number - b.number);
@@ -95,14 +103,10 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'No available doors at this time' }, { status: 503 });
   }
 
-  // Pick the lowest door number (linear)
   const nextDoor = availableDoors[0];
 
-  // Open the door via hardware
   try {
     const hw = getHardwareController();
-
-    // Resolve the hardware doorId from the locker SDK if possible
     const doorsResult = await hw.locker.getDoors();
     let doorId: string = `door_${nextDoor.number}`;
 
@@ -129,16 +133,20 @@ export async function POST(req: NextRequest) {
     return NextResponse.json({ error: 'Failed to open door', detail: err.message }, { status: 500 });
   }
 
-  // Record the transaction
-  const tx = txDb.record(rfid, nextDoor._id, nextDoor.number);
+  const tx = await txDb.record(rfid, lockerId, nextDoor._id, nextDoor.number);
 
-  // Log the check-in
-  logDb.append({ rfid, label: record.label, doorNumber: nextDoor.number, action: 'checkin' });
+  await logDb.append({
+    rfid,
+    label:      record.label,
+    lockerId,
+    doorNumber: nextDoor.number,
+    action:     'checkin',
+  });
 
   return NextResponse.json({
-    id: record.id,
-    label: record.label,
+    id:         record.id,
+    label:      record.label,
     doorNumber: nextDoor.number,
-    openedAt: tx.openedAt,
+    openedAt:   tx.openedAt,
   });
 }

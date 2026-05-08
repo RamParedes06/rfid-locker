@@ -1,17 +1,40 @@
 import { NextRequest, NextResponse } from 'next/server';
 import { db } from '@/lib/db';
 
+const VERSION = process.env.VERSION_CONTROL ?? 'Multi';
+
 // GET /api/rfid — list all registrations
 export async function GET() {
   return NextResponse.json(db.getAll());
 }
 
-// POST /api/rfid — register an RFID tag to 1–3 doors
+// POST /api/rfid — register an RFID tag
+// Multi mode: requires rfid + doors[]
+// Single mode: requires rfid only (doors[] is ignored / empty)
 export async function POST(req: NextRequest) {
   const body = await req.json();
   const { rfid, doors, label } = body;
 
-  if (!rfid || !Array.isArray(doors) || doors.length === 0) {
+  if (!rfid) {
+    return NextResponse.json({ error: 'rfid is required' }, { status: 400 });
+  }
+
+  const existing = db.findByRfid(rfid);
+  if (existing) {
+    return NextResponse.json(
+      { error: `RFID already registered${existing.label ? ` (${existing.label})` : ''}` },
+      { status: 409 }
+    );
+  }
+
+  if (VERSION === 'Single') {
+    // Single mode — no door assignment needed
+    const record = db.create({ rfid, doors: [], label });
+    return NextResponse.json(record, { status: 201 });
+  }
+
+  // Multi mode — doors are required
+  if (!Array.isArray(doors) || doors.length === 0) {
     return NextResponse.json(
       { error: 'rfid and doors[] are required' },
       { status: 400 }
@@ -32,14 +55,6 @@ export async function POST(req: NextRequest) {
         { status: 400 }
       );
     }
-  }
-
-  const existing = db.findByRfid(rfid);
-  if (existing) {
-    return NextResponse.json(
-      { error: `RFID already registered (${existing.doors.map((d) => `#${d.doorNumber}`).join(', ')})` },
-      { status: 409 }
-    );
   }
 
   const record = db.create({ rfid, doors, label });

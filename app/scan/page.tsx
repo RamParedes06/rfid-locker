@@ -3,13 +3,15 @@
 import { useState } from 'react';
 import dynamic from 'next/dynamic';
 import RfidScanner from '@/components/RfidScanner';
-import { DoorOpen, ScanLine, Hand } from 'lucide-react';
+import { DoorOpen, ScanLine, Hand, Clock } from 'lucide-react';
 import loadingAnim from '@/public/lottie-loading.json';
 import successAnim from '@/public/lottie-success.json';
 import errorAnim from '@/public/lottie-error.json';
 const Lottie = dynamic(() => import('lottie-react'), { ssr: false });
 
-type ScanState = 'idle' | 'loading' | 'pick-door' | 'opening' | 'success' | 'error';
+const VERSION = process.env.NEXT_PUBLIC_VERSION_CONTROL ?? 'Multi';
+
+type ScanState = 'idle' | 'loading' | 'pick-door' | 'opening' | 'success' | 'error' | 'no-door';
 
 interface DoorEntry {
   doorId: string;
@@ -22,6 +24,8 @@ interface ScanResult {
   doors?: DoorEntry[];
   openedDoor?: number;
   message?: string;
+  detail?: string;
+  action?: 'checkin' | 'checkout';
 }
 
 const BG: Record<ScanState, string> = {
@@ -31,6 +35,7 @@ const BG: Record<ScanState, string> = {
   opening:     'from-slate-950 via-cyan-950 to-slate-950',
   success:     'from-slate-950 via-green-950 to-slate-950',
   error:       'from-slate-950 via-red-950 to-slate-950',
+  'no-door':   'from-slate-950 via-slate-900 to-slate-950',
 };
 
 export default function ScanPage() {
@@ -58,12 +63,27 @@ export default function ScanPage() {
     const data = await res.json();
 
     if (!res.ok) {
+      // 503 = no doors available — friendly state, not an access error
+      if (res.status === 503) {
+        setState('no-door');
+        resetAfter(6000);
+        return;
+      }
       setState('error');
-      setResult({ message: data.error ?? 'Unknown error' });
+      setResult({ message: data.error ?? 'Unknown error', detail: data.detail });
       resetAfter(4000);
       return;
     }
 
+    // ── Single mode: door was already opened server-side ──────────────────
+    if (VERSION === 'Single') {
+      setState('success');
+      setResult({ label: data.label, openedDoor: data.doorNumber, action: data.action });
+      resetAfter(5000);
+      return;
+    }
+
+    // ── Multi mode: one door → open immediately; multiple → show picker ───
     if (data.doors.length === 1) {
       await openDoor(data.doors[0].doorNumber, data.label);
       return;
@@ -115,6 +135,7 @@ export default function ScanPage() {
             state === 'idle'    ? 'ring-teal-500/30 shadow-teal-500/20' :
             state === 'loading' || state === 'opening' ? 'ring-cyan-400/30 shadow-cyan-500/20' :
             state === 'success' ? 'ring-green-400/30 shadow-green-500/20' :
+            state === 'no-door' ? 'ring-slate-400/30 shadow-slate-500/20' :
             'ring-red-400/30 shadow-red-500/20'
           }`}
         >
@@ -122,9 +143,9 @@ export default function ScanPage() {
             <>
               <NfcPulse />
               <div className="text-center space-y-2">
-                <h1 className="text-2xl font-bold tracking-tight">Tap your card</h1>
+                <h1 className="text-2xl font-bold tracking-tight">Tap to open</h1>
                 <p className="text-slate-400 text-sm leading-relaxed">
-                  Hold your RFID card near the scanner to open your locker
+                  Hold your RFID card <em>or</em> phone near the reader to open your locker
                 </p>
               </div>
               <span className="flex h-3 w-3">
@@ -159,7 +180,11 @@ export default function ScanPage() {
                 {result?.label && <p className="text-slate-400 text-sm">{result.label}</p>}
                 <div className="flex items-center justify-center gap-2 text-green-400 pt-1">
                   <DoorOpen className="w-4 h-4" />
-                  <span className="text-xs">Please retrieve your items</span>
+                  <span className="text-xs">
+                    {result?.action === 'checkout'
+                      ? 'Door released — thank you!'
+                      : 'Please retrieve your items'}
+                  </span>
                 </div>
               </div>
             </>
@@ -175,13 +200,33 @@ export default function ScanPage() {
                 <p className="text-slate-400 text-sm">
                   {result?.message ?? 'RFID card not recognized'}
                 </p>
+                {result?.detail && (
+                  <p className="text-slate-500 text-xs mt-1">{result.detail}</p>
+                )}
+              </div>
+            </>
+          )}
+
+          {state === 'no-door' && (
+            <>
+              <div className="w-20 h-20 rounded-2xl bg-slate-800 border border-slate-600 flex items-center justify-center">
+                <Clock className="w-10 h-10 text-slate-400" />
+              </div>
+              <div className="text-center space-y-3">
+                <h1 className="text-2xl font-bold text-slate-200">No Doors Available</h1>
+                <p className="text-slate-400 text-sm leading-relaxed">
+                  All lockers are currently occupied.
+                </p>
+                <p className="text-slate-500 text-sm">
+                  Please come back later.
+                </p>
               </div>
             </>
           )}
         </div>
       )}
 
-      {/* ── Multi-door picker ── */}
+      {/* ── Multi-door picker (Multi mode only) ── */}
       {isFullscreen && result?.doors && (
         <div className="flex flex-col items-center gap-10 w-full max-w-2xl">
 
@@ -201,7 +246,6 @@ export default function ScanPage() {
             <p className="text-slate-400 text-base">
               Select the door you want to open
             </p>
-            {/* Decorative divider */}
             <div className="flex items-center justify-center gap-3 pt-1">
               <div className="h-px w-12 bg-gradient-to-r from-transparent to-teal-500/50" />
               <div className="w-1.5 h-1.5 rounded-full gradient-primary" />
@@ -231,27 +275,22 @@ export default function ScanPage() {
   );
 }
 
-/* ── Door card ── */
+/* ── Door card (Multi mode) ── */
 function DoorCard({ doorNumber, onTap }: { doorNumber: number; onTap: () => void }) {
   return (
     <button
       onClick={onTap}
       className="relative flex flex-col items-center gap-5 rounded-3xl bg-white/5 active:bg-white/15 border border-white/10 active:border-teal-400/80 backdrop-blur-md px-6 py-10 transition-all duration-150 active:scale-[0.97] shadow-lg shadow-black/30"
     >
-      {/* Door icon */}
       <div className="w-16 h-16 rounded-2xl gradient-primary flex items-center justify-center shadow-lg shadow-teal-500/30">
         <DoorOpen className="w-8 h-8 text-white" />
       </div>
-
-      {/* Door number */}
       <div className="flex flex-col items-center gap-0.5">
         <span className="text-xs text-slate-500 uppercase tracking-widest font-medium">Door</span>
         <span className="text-6xl font-black tracking-tighter text-white leading-none">
           {doorNumber}
         </span>
       </div>
-
-      {/* Tap hint */}
       <div className="flex items-center gap-1.5 px-3 py-1.5 rounded-full bg-teal-500/10 border border-teal-500/20 text-xs text-teal-400">
         <Hand className="w-3 h-3" />
         <span>Tap to open</span>

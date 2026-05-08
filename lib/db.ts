@@ -1,9 +1,14 @@
 /**
  * Simple JSON file-based store for RFID registrations.
- * Each record maps an RFID tag to 1–3 doors.
+ *
+ * Multi mode: each record maps an RFID tag to 1–3 doors (multi-access).
+ * Single mode: each record maps an RFID tag to a name only; a separate
+ *              transactions file tracks which door was opened per tag.
  */
 import fs from 'fs';
 import path from 'path';
+
+// ─── Shared types ────────────────────────────────────────────────────────────
 
 export interface DoorEntry {
   doorId: string;
@@ -13,12 +18,28 @@ export interface DoorEntry {
 export interface RfidRecord {
   id: string;
   rfid: string;
-  doors: DoorEntry[];   // 1–3 doors
+  doors: DoorEntry[];   // Multi: 1–3 doors. Single: always []
   label?: string;
   createdAt: string;
 }
 
-const DB_PATH = path.join(process.cwd(), 'data', 'rfid.json');
+// ─── Transaction (Single mode) ───────────────────────────────────────────────
+
+export interface RfidTransaction {
+  id: string;
+  rfid: string;
+  doorId: string;
+  doorNumber: number;
+  openedAt: string;
+}
+
+// ─── File paths ──────────────────────────────────────────────────────────────
+
+const DATA_DIR   = path.join(process.cwd(), 'data');
+const DB_PATH    = path.join(DATA_DIR, 'rfid.json');
+const TX_PATH    = path.join(DATA_DIR, 'transactions.json');
+
+// ─── RFID records ────────────────────────────────────────────────────────────
 
 function read(): RfidRecord[] {
   if (!fs.existsSync(DB_PATH)) return [];
@@ -33,7 +54,7 @@ function read(): RfidRecord[] {
 }
 
 function write(records: RfidRecord[]) {
-  fs.mkdirSync(path.dirname(DB_PATH), { recursive: true });
+  fs.mkdirSync(DATA_DIR, { recursive: true });
   fs.writeFileSync(DB_PATH, JSON.stringify(records, null, 2));
 }
 
@@ -68,6 +89,92 @@ export const db = {
     const filtered = records.filter((r) => r.id !== id);
     if (filtered.length === records.length) return false;
     write(filtered);
+    return true;
+  },
+};
+
+// ─── Access Log ──────────────────────────────────────────────────────────────
+
+export interface AccessLog {
+  id: string;
+  rfid: string;
+  label?: string;
+  doorNumber: number;
+  action: 'checkin' | 'checkout';
+  timestamp: string;
+}
+
+const LOG_PATH = path.join(DATA_DIR, 'logs.json');
+
+function readLogs(): AccessLog[] {
+  if (!fs.existsSync(LOG_PATH)) return [];
+  return JSON.parse(fs.readFileSync(LOG_PATH, 'utf-8'));
+}
+
+function writeLogs(logs: AccessLog[]) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(LOG_PATH, JSON.stringify(logs, null, 2));
+}
+
+export const logDb = {
+  getAll: (): AccessLog[] => readLogs(),
+
+  /** Most recent first, optional limit */
+  getRecent: (limit = 200): AccessLog[] =>
+    readLogs().slice(-limit).reverse(),
+
+  append: (entry: Omit<AccessLog, 'id' | 'timestamp'>): AccessLog => {
+    const logs = readLogs();
+    const log: AccessLog = {
+      ...entry,
+      id: crypto.randomUUID(),
+      timestamp: new Date().toISOString(),
+    };
+    writeLogs([...logs, log]);
+    return log;
+  },
+};
+
+function readTx(): RfidTransaction[] {
+  if (!fs.existsSync(TX_PATH)) return [];
+  return JSON.parse(fs.readFileSync(TX_PATH, 'utf-8'));
+}
+
+function writeTx(txs: RfidTransaction[]) {
+  fs.mkdirSync(DATA_DIR, { recursive: true });
+  fs.writeFileSync(TX_PATH, JSON.stringify(txs, null, 2));
+}
+
+export const txDb = {
+  getAll: (): RfidTransaction[] => readTx(),
+
+  /** Returns the transaction for this RFID if it already opened a door */
+  findByRfid: (rfid: string): RfidTransaction | undefined =>
+    readTx().find((t) => t.rfid === rfid),
+
+  /** Returns all door numbers that already have a transaction */
+  usedDoorNumbers: (): Set<number> =>
+    new Set(readTx().map((t) => t.doorNumber)),
+
+  record: (rfid: string, doorId: string, doorNumber: number): RfidTransaction => {
+    const txs = readTx();
+    const tx: RfidTransaction = {
+      id: crypto.randomUUID(),
+      rfid,
+      doorId,
+      doorNumber,
+      openedAt: new Date().toISOString(),
+    };
+    writeTx([...txs, tx]);
+    return tx;
+  },
+
+  /** Remove a transaction (admin reset) */
+  deleteByRfid: (rfid: string): boolean => {
+    const txs = readTx();
+    const filtered = txs.filter((t) => t.rfid !== rfid);
+    if (filtered.length === txs.length) return false;
+    writeTx(filtered);
     return true;
   },
 };

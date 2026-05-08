@@ -1,0 +1,18 @@
+[
+  {
+    "rfid": "2150734602",
+    "label": "as",
+    "doorNumber": 3,
+    "action": "checkin",
+    "id": "ee897582-98e2-43a4-9a3d-b7778088e26a",
+    "timestamp": "2026-05-08T07:45:44.800Z"
+  },
+  {
+    "rfid": "2150734602",
+    "label": "as",
+    "doorNumber": 3,
+    "action": "checkout",
+    "id": "5ee25197-b916-4f42-a794-50a488fee682",
+    "timestamp": "2026-05-08T07:45:54.852Z"
+  }
+]

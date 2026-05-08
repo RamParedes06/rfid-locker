@@ -20,6 +20,8 @@ interface Props {
   registeredDoorIds?: Set<string>;
   /** Disable selecting more when max is reached */
   maxReached?: boolean;
+  /** Read-only mode — display only, no interaction */
+  readOnly?: boolean;
 }
 
 const STATUS_COLOR: Record<string, string> = {
@@ -29,7 +31,7 @@ const STATUS_COLOR: Record<string, string> = {
   penciled:  'bg-yellow-50 border-yellow-300 cursor-not-allowed opacity-60 text-yellow-700',
 };
 
-export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onSelect, registeredDoorIds, maxReached }: Props) {
+export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onSelect, registeredDoorIds, maxReached, readOnly }: Props) {
   if (!doors.length) {
     return <p className="text-slate-400 text-sm">No doors found.</p>;
   }
@@ -43,7 +45,7 @@ export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onS
           selectedDoorIds?.has(door._id) || selectedDoorId === door._id;
         const isRegistered = registeredDoorIds?.has(door._id);
         const colorClass = STATUS_COLOR[door.status] ?? 'bg-slate-100 border-slate-200 text-slate-400';
-        const canSelect = door.status === 'available' && !isRegistered && (!maxReached || isSelected);
+        const canSelect = !readOnly && door.status === 'available' && !isRegistered && (!maxReached || isSelected);
 
         return (
           <button
@@ -52,12 +54,13 @@ export default function DoorMatrix({ doors, selectedDoorIds, selectedDoorId, onS
             onClick={() => canSelect && onSelect?.(door)}
             className={[
               'border-2 rounded-lg p-2 text-center text-xs font-medium transition-all',
+              readOnly ? 'cursor-default' : '',
               isSelected
                 ? 'ring-2 ring-teal-500 border-teal-500 bg-teal-50 text-teal-900'
                 : isRegistered
                   ? 'ring-2 ring-cyan-400 border-cyan-400 bg-cyan-50 text-cyan-800'
                   : colorClass,
-              !canSelect && !isSelected ? 'opacity-50 cursor-not-allowed' : '',
+              !canSelect && !isSelected && !readOnly ? 'opacity-50 cursor-not-allowed' : '',
             ].join(' ')}
           >
             <div className="font-bold text-sm">#{door.number}</div>
